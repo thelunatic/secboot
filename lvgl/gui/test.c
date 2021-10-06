@@ -137,26 +137,33 @@ void lv_ex_btn_1(void)
     lv_label_set_text(label, "Click me");
 }
 
+static void sec_task(rtems_task arg){
+    printf("This is task %d\n", (int)arg);
+}
+
 static void
 Init(rtems_task_argument arg)
 {
     rtems_status_code sc;
+    rtems_id tid[5];
+    char ch = '0';
     int exit_code;
     (void)arg;
 
-    sc = rtems_task_create(
-    rtems_build_name('E', 'V', 'D', 'M'),
-    PRIO_MOUSE,
-    RTEMS_MINIMUM_STACK_SIZE,
-    RTEMS_DEFAULT_MODES,
-    RTEMS_FLOATING_POINT,
-    &eid
-    );
-    assert(sc == RTEMS_SUCCESSFUL);
+    for(int i=0; i<5; ++i){
+        sc = rtems_task_create(
+                rtems_build_name('T', 'A', '0', ch + i),
+                100,
+                RTEMS_MINIMUM_STACK_SIZE,
+                RTEMS_DEFAULT_MODES,
+                RTEMS_FLOATING_POINT,
+                &tid[i]
+                );
+        sc = rtems_task_start(tid[0], sec_task, i);
+        assert(sc == RTEMS_SUCCESSFUL);
+    }
 
-    sc = rtems_task_start(eid, evdev_input_task, 0);
-    assert(sc == RTEMS_SUCCESSFUL);
-
+/*
     sc = rtems_bsd_initialize();
     assert(sc == RTEMS_SUCCESSFUL);
 
@@ -194,7 +201,7 @@ Init(rtems_task_argument arg)
     while (evtask_active) {
       rtems_task_wake_after(RTEMS_MILLISECONDS_TO_TICKS(10));
     }
-
+*/
     exit(0);
 }
 /*
