@@ -22,7 +22,7 @@ def init(ctx):
 
 def bsp_configure(conf, arch_bsp):
     rtems_bsd.bsp_configure(conf, arch_bsp, mandatory = False)
-    conf.recurse('lvgl')
+    conf.recurse('secboot')
 
 def options(opt):
     rtems.options(opt)
@@ -34,7 +34,7 @@ def configure(conf):
 def build(bld):
     rtems.build(bld)
     bld.env.CFLAGS += ['-O2','-g']
-    bld.recurse('lvgl')
+    bld.recurse('secboot')
 
 def rebuild(ctx):
     import waflib.Options
