@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2020 Vijay Kumar Banerjee <vijay@rtems.org>.
+ * Copyright (c) 2021 Regents of the University of Colorado.
+ * Developed by the Embedded Systems and Security lab <essl@uccs.edu>
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -34,17 +35,22 @@
 #include <time.h>
 #include <pthread.h>
 
-#define PRIO_SHELL      150
+#ifdef RAND_MAX
+#undef RAND_MAX
+#endif
+
+#define RAND_MAX            100
+#define PRIO_SHELL          150
 #define STACK_SIZE_SHELL    (64 * 1024)
 #define PRIO_MOUSE          (RTEMS_MAXIMUM_PRIORITY - 10)
 
-typedef struct evdev_message {
-    int fd;
-    char device[256];
-} evdev_message;
-
 static rtems_id eid, emid;
 static volatile bool kill_evtask, evtask_active;
+
+struct tsk_arg{
+  int num;
+  rtems_id tid;
+};
 
 static void*
 tick_thread (void *arg)
@@ -54,54 +60,76 @@ tick_thread (void *arg)
     }
 }
 
-static void
-evdev_input_task(rtems_task_argument arg)
-{
-    rtems_status_code sc;
-    size_t size;
-    int fd = -1;
-    pthread_t thread_id;
-
-    evdev_message msg;
-
-    kill_evtask = false;
-    evtask_active = true;
-
-
-    pthread_create(&thread_id, NULL, tick_thread, NULL);
-    evtask_active = false;
-    rtems_task_delete(RTEMS_SELF);
+static int safety_task(){
+    return 0;
 }
 
-void
-libbsdhelper_start_shell(rtems_task_priority prio)
-{
-    rtems_status_code sc = rtems_shell_init(
-        "SHLL",
-        STACK_SIZE_SHELL,
-        prio,
-        CONSOLE_DEVICE_NAME,
-        false,
-        true,
-        NULL
-    );
-    assert(sc == RTEMS_SUCCESSFUL);
+static void
+restart_task(){
+    sleep(3);
+    exit(0);
+}
+
+static void
+microreboot_task(rtems_task_argument arg){
+    rtems_id id = (rtems_id) arg;
+    printf("Restarting task with task id: %d\n", id);
+    rtems_task_restart(id, 0);
+}
+
+static void
+complex_task(rtems_task_argument arg){
+
+    int val = 0;
+    int temp1 = 0;
+    int temp2 = 1;
+    for (int i = 0; i < 1000000; ++i){
+        val = temp1 + temp2;
+        temp1 = temp2;
+        temp2 = val;
+    }
 }
 
 static void sec_task(rtems_task_argument arg){
+    struct tsk_arg ta;// = arg;
+    int num = ta.num;
+    rtems_id tid = ta.tid;
+    
+    if (num == 2){  //SC Task
+        /*
+          check the value of global var TEMP,
+          return temp+2.
+          Value is always withing 100 +- 10
+        */
+    }
+    if (num == 3){  // CC Task
+        /*
+          same as sc task, but without range check
+        */
+    }
+    if (num == 4){  //DM Task
+        /*
+           Check the output from the CC task and decide whether
+           to output SC or CC output.
+        */
+    }
+        if (num == 5){  // CC Task
+        /*
+          same as cc task, but without a parallel sc task (this internal CC task is used to experiment what happens to the other existing taks in the system which have nothing to do with the controller output)
+        */
+        }
     printf("This is task %d\n", (int)arg);
 }
 
 static void
-Init(rtems_task_argument arg)
-{
+Init(rtems_task_argument arg){
     rtems_status_code sc;
     rtems_id tid[5];
     char ch = '0';
     int exit_code;
     (void)arg;
 
-    for(int i=0; i<5; ++i){
+    for(int i=0; i<6; ++i){
         sc = rtems_task_create(
                 rtems_build_name('T', 'A', '0', ch + i),
                 100,
@@ -110,9 +138,21 @@ Init(rtems_task_argument arg)
                 RTEMS_FLOATING_POINT,
                 &tid[i]
                 );
-        sc = rtems_task_start(tid[0], sec_task, i);
-        assert(sc == RTEMS_SUCCESSFUL);
     }
+    sc = rtems_task_start(tid[0], restart_task, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    sc = rtems_task_start(tid[1], microreboot_task, tid[2]);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    sc = rtems_task_start(tid[2], complex_task, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    sc = rtems_task_start(tid[0], sec_task, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    sc = rtems_task_start(tid[0], sec_task, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
 
     exit(0);
 }
