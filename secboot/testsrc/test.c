@@ -44,24 +44,31 @@
 #define STACK_SIZE_SHELL    (64 * 1024)
 #define PRIO_MOUSE          (RTEMS_MAXIMUM_PRIORITY - 10)
 
-static rtems_id eid, emid;
-static volatile bool kill_evtask, evtask_active;
+#define TASK_EXEC_COUNT_MAX 10
+#define JOB_MAX 5
+#define SFTY_IDX 0
+#define CMPLX_IDX 1
 
-struct tsk_arg{
-  int num;
-  rtems_id tid;
-};
+typedef struct tsk_exec_ct{
+   int count;
+   rtems_id id;
+   bool to_reboot;
+}tsk_exec;
 
-static void*
-tick_thread (void *arg)
-{
-    (void)arg;
-    while(1) {
+tsk_exec jobs[JOB_MAX] = {};
+
+
+static void safety_task(){
+    int val = 0;
+    int temp1 = 0;
+    int temp2 = 1;
+    for (int i = 0; i < 1000000; ++i){
+        /* Slowing down the safety task */
+        for (int j = 1; j < 1000; ++j);
+        val = temp1 + temp2;
+        temp1 = temp2;
+        temp2 = val;
     }
-}
-
-static int safety_task(){
-    return 0;
 }
 
 static void
@@ -72,9 +79,11 @@ restart_task(){
 
 static void
 microreboot_task(rtems_task_argument arg){
-    rtems_id id = (rtems_id) arg;
-    printf("Restarting task with task id: %d\n", id);
-    rtems_task_restart(id, 0);
+    for (int i = 0; i < 10; ++i){
+        rtems_id id = (rtems_id) arg;
+        printf("Restarting task with task id: %d\n", id);
+        rtems_task_restart(id, 0);
+    }
 }
 
 static void
@@ -83,42 +92,15 @@ complex_task(rtems_task_argument arg){
     int val = 0;
     int temp1 = 0;
     int temp2 = 1;
+    rtems_id id = rtems_task_self();
+    jobs[CMPLX_IDX].id = id;
+    jobs[CMPLX_IDX].count++;
+    
     for (int i = 0; i < 1000000; ++i){
         val = temp1 + temp2;
         temp1 = temp2;
         temp2 = val;
     }
-}
-
-static void sec_task(rtems_task_argument arg){
-    struct tsk_arg ta;// = arg;
-    int num = ta.num;
-    rtems_id tid = ta.tid;
-    
-    if (num == 2){  //SC Task
-        /*
-          check the value of global var TEMP,
-          return temp+2.
-          Value is always withing 100 +- 10
-        */
-    }
-    if (num == 3){  // CC Task
-        /*
-          same as sc task, but without range check
-        */
-    }
-    if (num == 4){  //DM Task
-        /*
-           Check the output from the CC task and decide whether
-           to output SC or CC output.
-        */
-    }
-        if (num == 5){  // CC Task
-        /*
-          same as cc task, but without a parallel sc task (this internal CC task is used to experiment what happens to the other existing taks in the system which have nothing to do with the controller output)
-        */
-        }
-    printf("This is task %d\n", (int)arg);
 }
 
 static void
@@ -148,10 +130,7 @@ Init(rtems_task_argument arg){
     sc = rtems_task_start(tid[2], complex_task, 0);
     assert(sc == RTEMS_SUCCESSFUL);
 
-    sc = rtems_task_start(tid[0], sec_task, 0);
-    assert(sc == RTEMS_SUCCESSFUL);
-
-    sc = rtems_task_start(tid[0], sec_task, 0);
+    sc = rtems_task_start(tid[0], safety_task, 0);
     assert(sc == RTEMS_SUCCESSFUL);
 
     exit(0);
@@ -183,8 +162,6 @@ Init(rtems_task_argument arg){
 #define CONFIGURE_BDBUF_CACHE_MEMORY_SIZE (1 * 1024 * 1024)
 #define CONFIGURE_BDBUF_READ_AHEAD_TASK_PRIORITY 97
 #define CONFIGURE_SWAPOUT_TASK_PRIORITY 97
-
-//#define CONFIGURE_STACK_CHECKER_ENABLED
 
 #define CONFIGURE_RTEMS_INIT_TASKS_TABLE
 #define CONFIGURE_INIT
