@@ -27,10 +27,14 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include <rtems.h>
 #include <rtems/console.h>
 #include <rtems/shell.h>
+#include <rtems/btimer.h>
+#include <rtems/test.h>
+#include <rtems/bspIo.h>
 #include <unistd.h>
 #include <time.h>
 #include <pthread.h>
@@ -48,6 +52,7 @@
 #define JOB_MAX 5
 #define SFTY_IDX 0
 #define CMPLX_IDX 1
+#define HYPER_PERIOD 3
 
 typedef struct tsk_exec_ct{
    int count;
@@ -59,48 +64,42 @@ tsk_exec jobs[JOB_MAX] = {};
 
 
 static void safety_task(){
+    printk("\n SAFETY TASK STARTED");
+
     int val = 0;
     int temp1 = 0;
     int temp2 = 1;
-    for (int i = 0; i < 1000000; ++i){
-        /* Slowing down the safety task */
-        for (int j = 1; j < 1000; ++j);
-        val = temp1 + temp2;
-        temp1 = temp2;
-        temp2 = val;
-    }
-}
+    uint_fast32_t time_tick;
 
-static void
-restart_task(){
-    sleep(3);
-    exit(0);
+    time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
+    T_busy(time_tick);
+    printk("\n SAFETY TASK OVER");
+
+    rtems_task_exit();
 }
 
 static void
 microreboot_task(rtems_task_argument arg){
-    for (int i = 0; i < 10; ++i){
-        rtems_id id = (rtems_id) arg;
-        printf("Restarting task with task id: %d\n", id);
-        rtems_task_restart(id, 0);
-    }
+    printk("\n MICROREBOOT REACHED");
+    rtems_task_exit();
 }
 
 static void
 complex_task(rtems_task_argument arg){
 
+    printk("\n COMPLEX TASK STARTED");
     int val = 0;
     int temp1 = 0;
     int temp2 = 1;
+    uint_fast32_t time_tick;
     rtems_id id = rtems_task_self();
     jobs[CMPLX_IDX].id = id;
     jobs[CMPLX_IDX].count++;
     
-    for (int i = 0; i < 1000000; ++i){
-        val = temp1 + temp2;
-        temp1 = temp2;
-        temp2 = val;
-    }
+    time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
+    T_busy(time_tick);
+    printk("\n COMPLEX TASK ENDED");
+    rtems_task_exit();
 }
 
 static void
@@ -111,28 +110,34 @@ Init(rtems_task_argument arg){
     int exit_code;
     (void)arg;
 
-    for(int i=0; i<6; ++i){
+    printk("\n SYSTEM STARTED");
+
+    for(int i=0; i<3; ++i){
         sc = rtems_task_create(
-                rtems_build_name('T', 'A', '0', ch + i),
-                100,
-                RTEMS_MINIMUM_STACK_SIZE,
-                RTEMS_DEFAULT_MODES,
-                RTEMS_FLOATING_POINT,
-                &tid[i]
-                );
+              rtems_build_name('T', 'A', '0', ch + i),
+              100+i,
+              RTEMS_MINIMUM_STACK_SIZE,
+              RTEMS_DEFAULT_MODES,
+              RTEMS_FLOATING_POINT,
+              &tid[i]
+             );
+        printk("\n%d", tid[i]);
+        assert(sc == RTEMS_SUCCESSFUL);
     }
-    sc = rtems_task_start(tid[0], restart_task, 0);
+
+    sc = rtems_task_start(tid[0], microreboot_task, tid[2]);
     assert(sc == RTEMS_SUCCESSFUL);
 
-    sc = rtems_task_start(tid[1], microreboot_task, tid[2]);
+    sc = rtems_task_start(tid[1], safety_task, 0);
     assert(sc == RTEMS_SUCCESSFUL);
 
     sc = rtems_task_start(tid[2], complex_task, 0);
     assert(sc == RTEMS_SUCCESSFUL);
 
-    sc = rtems_task_start(tid[0], safety_task, 0);
-    assert(sc == RTEMS_SUCCESSFUL);
 
+    printk("\n ALL TASKS STARTED");
+
+    sleep(HYPER_PERIOD);
     exit(0);
 }
 /*
@@ -153,6 +158,7 @@ Init(rtems_task_argument arg){
 #define CONFIGURE_UNIFIED_WORK_AREAS
 #define CONFIGURE_MAXIMUM_USER_EXTENSIONS 1
 
+#define CONFIGURE_SCHEDULER_EDF
 #define CONFIGURE_INIT_TASK_STACK_SIZE (64*1024)
 #define CONFIGURE_INIT_TASK_INITIAL_MODES RTEMS_DEFAULT_MODES
 #define CONFIGURE_INIT_TASK_ATTRIBUTES RTEMS_FLOATING_POINT

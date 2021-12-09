@@ -21,4 +21,4 @@ def build(bld):
         target = 'secapp.exe',
         source = ['test.c'],
         includes = include_paths,
-        lib = ['m'])
+        lib = ['m', 'rtemstest'])
