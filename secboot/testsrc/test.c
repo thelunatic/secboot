@@ -54,14 +54,9 @@
 #define CMPLX_IDX 1
 #define HYPER_PERIOD 3
 
-typedef struct tsk_exec_ct{
-   int count;
-   rtems_id id;
-   bool to_reboot;
-}tsk_exec;
-
-tsk_exec jobs[JOB_MAX] = {};
-
+int COMPLEX = 0;
+int SIMPLE = 0;
+rtems_id semaphore;
 
 static void safety_task(){
     printk("\n SAFETY TASK STARTED");
@@ -70,11 +65,20 @@ static void safety_task(){
     int temp1 = 0;
     int temp2 = 1;
     uint_fast32_t time_tick;
+    rtems_status_code sc;
 
     time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
     T_busy(time_tick);
-    printk("\n SAFETY TASK OVER");
 
+    sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    SIMPLE++;
+
+    sc = rtems_semaphore_release(semaphore);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    printk("\n SAFETY TASK OVER");
     rtems_task_exit();
 }
 
@@ -92,27 +96,50 @@ complex_task(rtems_task_argument arg){
     int temp1 = 0;
     int temp2 = 1;
     uint_fast32_t time_tick;
+    rtems_status_code sc;
     rtems_id id = rtems_task_self();
-    jobs[CMPLX_IDX].id = id;
-    jobs[CMPLX_IDX].count++;
     
     time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
     T_busy(time_tick);
+    sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    COMPLEX++;
+
+    sc = rtems_semaphore_release(semaphore);
+    assert(sc == RTEMS_SUCCESSFUL);
+
     printk("\n COMPLEX TASK ENDED");
     rtems_task_exit();
 }
 
 static void
+decision_module(rtems_task_argument arg){
+    (void) arg;
+    rtems_status_code sc;
+    sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    if (SIMPLE == COMPLEX){
+        printk("\n\n == DECISION: COMPLEX MODULE == ");
+
+    }
+
+    sc = rtems_semaphore_release(semaphore);
+    assert(sc == RTEMS_SUCCESSFUL);
+
+    rtems_task_exit();
+}
+static void
 Init(rtems_task_argument arg){
     rtems_status_code sc;
     rtems_id tid[5];
     char ch = '0';
-    int exit_code;
     (void)arg;
 
     printk("\n SYSTEM STARTED");
 
-    for(int i=0; i<3; ++i){
+    for(int i=0; i<4; ++i){
         sc = rtems_task_create(
               rtems_build_name('T', 'A', '0', ch + i),
               100+i,
@@ -134,8 +161,21 @@ Init(rtems_task_argument arg){
     sc = rtems_task_start(tid[2], complex_task, 0);
     assert(sc == RTEMS_SUCCESSFUL);
 
+    sc = rtems_task_start(tid[3], decision_module, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
 
     printk("\n ALL TASKS STARTED");
+
+    sc = rtems_semaphore_create(
+         rtems_build_name ('S', 'E', 'M', '1'),
+         1,
+         RTEMS_BINARY_SEMAPHORE |
+         RTEMS_GLOBAL |
+         RTEMS_PRIORITY,
+         1,
+         &semaphore);
+    assert(sc == RTEMS_SUCCESSFUL);
+
 
     sleep(HYPER_PERIOD);
     exit(0);
