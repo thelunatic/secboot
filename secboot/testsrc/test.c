@@ -52,10 +52,10 @@
 #define JOB_MAX 5
 #define SFTY_IDX 0
 #define CMPLX_IDX 1
-#define HYPER_PERIOD 3
+#define HYPER_PERIOD 15
 
-int COMPLEX = 0;
-int SIMPLE = 0;
+int COMPLEX = 3;
+int SIMPLE = 3;
 rtems_id semaphore;
 
 static void safety_task(){
@@ -67,16 +67,20 @@ static void safety_task(){
     uint_fast32_t time_tick;
     rtems_status_code sc;
 
-    time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
-    T_busy(time_tick);
+    while(SIMPLE > 0){
+        time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
+        T_busy(time_tick);
 
-    sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
-    assert(sc == RTEMS_SUCCESSFUL);
+        sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
+        assert(sc == RTEMS_SUCCESSFUL);
 
-    SIMPLE++;
+        SIMPLE--;
 
-    sc = rtems_semaphore_release(semaphore);
-    assert(sc == RTEMS_SUCCESSFUL);
+        sc = rtems_semaphore_release(semaphore);
+        assert(sc == RTEMS_SUCCESSFUL);
+        sleep(1);
+
+    }
 
     printk("\n SAFETY TASK OVER");
     rtems_task_exit();
@@ -85,6 +89,11 @@ static void safety_task(){
 static void
 microreboot_task(rtems_task_argument arg){
     printk("\n MICROREBOOT REACHED");
+    for (int i = 1; i < 2; ++i){
+//        sleep(2);
+        rtems_task_restart((rtems_id) arg, 0);
+    }
+
     rtems_task_exit();
 }
 
@@ -99,15 +108,18 @@ complex_task(rtems_task_argument arg){
     rtems_status_code sc;
     rtems_id id = rtems_task_self();
     
-    time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
-    T_busy(time_tick);
-    sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
-    assert(sc == RTEMS_SUCCESSFUL);
+    while(COMPLEX > 0){
+        time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
+        T_busy(time_tick);
+        sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
+        assert(sc == RTEMS_SUCCESSFUL);
 
-    COMPLEX++;
+        COMPLEX--;
 
-    sc = rtems_semaphore_release(semaphore);
-    assert(sc == RTEMS_SUCCESSFUL);
+        sleep(1);
+        sc = rtems_semaphore_release(semaphore);
+        assert(sc == RTEMS_SUCCESSFUL);
+    }
 
     printk("\n COMPLEX TASK ENDED");
     rtems_task_exit();
