@@ -38,6 +38,7 @@
 #include <unistd.h>
 #include <time.h>
 #include <pthread.h>
+#include <sched.h>
 
 #ifdef RAND_MAX
 #undef RAND_MAX
@@ -53,131 +54,176 @@
 #define SFTY_IDX 0
 #define CMPLX_IDX 1
 #define HYPER_PERIOD 15
+#define SPRIO 10
+#define CPRIO 10
 
-int COMPLEX = 3;
-int SIMPLE = 3;
+int COMPLEX[4] = {0,0,0,0};
+int SIMPLE[4] = {0,0,0,0};
 rtems_id semaphore;
+rtems_id c_tid[4];
+rtems_id s_tid[4];
 
-static void safety_task(){
-    printk("\n SAFETY TASK STARTED");
+static void
+safety_task(rtems_task_argument number){
 
     int val = 0;
     int temp1 = 0;
     int temp2 = 1;
+    int i = 0;
     uint_fast32_t time_tick;
     rtems_status_code sc;
 
-    while(SIMPLE > 0){
-        time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
-        T_busy(time_tick);
-
-        sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
-        assert(sc == RTEMS_SUCCESSFUL);
-
-        SIMPLE--;
-
-        sc = rtems_semaphore_release(semaphore);
-        assert(sc == RTEMS_SUCCESSFUL);
-        sleep(1);
-
+    while(1){
+        i = i % 4;
+        printk("\n SAFETY TASK %d STARTED", (int)number);
+        time_tick = T_get_one_clock_tick_busy();
+        T_busy(time_tick/4);
+        SIMPLE[i] = 1;
+        i++;
+        sleep(0.25);
+        printk("\n SAFETY TASK %d OVER\n", (int) number);
     }
 
-    printk("\n SAFETY TASK OVER");
     rtems_task_exit();
 }
 
 static void
+complex_task(rtems_task_argument number){
+
+    int val = 0;
+    int temp1 = 0;
+    int temp2 = 1;
+    int i = 0;
+    uint_fast32_t time_tick;
+    rtems_status_code sc;
+
+    while(1){
+        i = i%4;
+        printk("\n COMPLEX TASK %d STARTED", (int)number);
+        time_tick = T_get_one_clock_tick_busy();
+        T_busy(time_tick/8);
+        COMPLEX[i] = 1;
+        ++i;
+        sleep(0.25);
+        printk("\n COMPLEX TASK %d OVER\n", (int)number);
+    }
+
+    rtems_task_exit();
+}
+
+static void
+safety_set(){
+    rtems_id tid[4];
+    char ch = '0';
+    rtems_status_code sc;
+
+    for(int i=0; i<3; ++i){
+        sc = rtems_task_create(
+              rtems_build_name('S', 'F', 'T', ch + i),
+              SPRIO,
+              RTEMS_MINIMUM_STACK_SIZE,
+              RTEMS_DEFAULT_MODES,
+              RTEMS_FLOATING_POINT,
+              &s_tid[i]
+             );
+        assert(sc == RTEMS_SUCCESSFUL);
+        sc = rtems_task_start(s_tid[i], safety_task, i);
+        assert(sc == RTEMS_SUCCESSFUL);
+    }
+
+}
+
+static void
+complex_set(){
+    rtems_id tid[4];
+    char ch = '0';
+    rtems_status_code sc;
+
+    for(int i=0; i<3; ++i){
+        sc = rtems_task_create(
+              rtems_build_name('C', 'M', 'P', ch + i),
+              CPRIO,
+              RTEMS_MINIMUM_STACK_SIZE,
+              RTEMS_DEFAULT_MODES,
+              RTEMS_FLOATING_POINT,
+              &c_tid[i]
+             );
+        assert(sc == RTEMS_SUCCESSFUL);
+        sc = rtems_task_start(c_tid[i], complex_task, i);
+        assert(sc == RTEMS_SUCCESSFUL);
+    }
+
+}
+
+#if 0
+static void
 microreboot_task(rtems_task_argument arg){
     printk("\n MICROREBOOT REACHED");
     for (int i = 1; i < 2; ++i){
-//        sleep(2);
+        //sleep(1);
+        //sched_yield();
+        rtems_status_code sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
+        assert(sc == RTEMS_SUCCESSFUL);
+
+        COMPLEX++;
+
+        sc = rtems_semaphore_release(semaphore);
+        assert(sc == RTEMS_SUCCESSFUL);
+
         rtems_task_restart((rtems_id) arg, 0);
     }
 
     rtems_task_exit();
 }
-
-static void
-complex_task(rtems_task_argument arg){
-
-    printk("\n COMPLEX TASK STARTED");
-    int val = 0;
-    int temp1 = 0;
-    int temp2 = 1;
-    uint_fast32_t time_tick;
-    rtems_status_code sc;
-    rtems_id id = rtems_task_self();
-    
-    while(COMPLEX > 0){
-        time_tick = (HYPER_PERIOD/30)*T_get_one_clock_tick_busy();
-        T_busy(time_tick);
-        sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
-        assert(sc == RTEMS_SUCCESSFUL);
-
-        COMPLEX--;
-
-        sleep(1);
-        sc = rtems_semaphore_release(semaphore);
-        assert(sc == RTEMS_SUCCESSFUL);
-    }
-
-    printk("\n COMPLEX TASK ENDED");
-    rtems_task_exit();
-}
+#endif
 
 static void
 decision_module(rtems_task_argument arg){
     (void) arg;
     rtems_status_code sc;
+    printk("\n DECISION MODULE STARTED");
+#if 0
     sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
     assert(sc == RTEMS_SUCCESSFUL);
+#endif
 
-    if (SIMPLE == COMPLEX){
-        printk("\n\n == DECISION: COMPLEX MODULE == ");
+    while(1){
+        for (int i = 0; i < 4; ++i){
+            if (SIMPLE[i] == COMPLEX[i]){
+                printk("\n\n == DECISION: COMPLEX MODULE == ");
+
+            }
+            else{
+                printk("\n\n == DECISION: SAFETY MODULE == ");
+                rtems_task_restart(c_tid[i], i);
+            }
+
+        }
+        sleep(2);
 
     }
 
+#if 0
     sc = rtems_semaphore_release(semaphore);
     assert(sc == RTEMS_SUCCESSFUL);
+#endif
 
     rtems_task_exit();
 }
+
 static void
 Init(rtems_task_argument arg){
     rtems_status_code sc;
     rtems_id tid[5];
     char ch = '0';
     (void)arg;
+    uint32_t prio_list[] = {0, 1, 2, 2};
 
     printk("\n SYSTEM STARTED");
 
-    for(int i=0; i<4; ++i){
-        sc = rtems_task_create(
-              rtems_build_name('T', 'A', '0', ch + i),
-              100+i,
-              RTEMS_MINIMUM_STACK_SIZE,
-              RTEMS_DEFAULT_MODES,
-              RTEMS_FLOATING_POINT,
-              &tid[i]
-             );
-        printk("\n%d", tid[i]);
-        assert(sc == RTEMS_SUCCESSFUL);
-    }
+    //printk("\n ALL TASKS STARTED");
 
-    sc = rtems_task_start(tid[0], microreboot_task, tid[2]);
-    assert(sc == RTEMS_SUCCESSFUL);
-
-    sc = rtems_task_start(tid[1], safety_task, 0);
-    assert(sc == RTEMS_SUCCESSFUL);
-
-    sc = rtems_task_start(tid[2], complex_task, 0);
-    assert(sc == RTEMS_SUCCESSFUL);
-
-    sc = rtems_task_start(tid[3], decision_module, 0);
-    assert(sc == RTEMS_SUCCESSFUL);
-
-    printk("\n ALL TASKS STARTED");
-
+#if 0
     sc = rtems_semaphore_create(
          rtems_build_name ('S', 'E', 'M', '1'),
          1,
@@ -187,7 +233,11 @@ Init(rtems_task_argument arg){
          1,
          &semaphore);
     assert(sc == RTEMS_SUCCESSFUL);
+#endif
 
+    safety_set();
+    complex_set();
+    decision_module(0);
 
     sleep(HYPER_PERIOD);
     exit(0);
@@ -210,8 +260,8 @@ Init(rtems_task_argument arg){
 #define CONFIGURE_UNIFIED_WORK_AREAS
 #define CONFIGURE_MAXIMUM_USER_EXTENSIONS 1
 
-//#define CONFIGURE_SCHEDULER_EDF
-#define CONFIGURE_SCHEDULER_PRIORITY
+#define CONFIGURE_SCHEDULER_EDF
+//#define CONFIGURE_SCHEDULER_PRIORITY
 #define CONFIGURE_INIT_TASK_STACK_SIZE (64*1024)
 #define CONFIGURE_INIT_TASK_INITIAL_MODES RTEMS_DEFAULT_MODES
 #define CONFIGURE_INIT_TASK_ATTRIBUTES RTEMS_FLOATING_POINT
