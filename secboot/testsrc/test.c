@@ -80,7 +80,8 @@ safety_task(rtems_task_argument number){
         T_busy(time_tick/4);
         SIMPLE[i] = 1;
         i++;
-        sleep(0.25);
+        //sleep(0.25);
+        sched_yield();
         printk("\n SAFETY TASK %d OVER\n", (int) number);
     }
 
@@ -104,7 +105,7 @@ complex_task(rtems_task_argument number){
         T_busy(time_tick/8);
         COMPLEX[i] = 1;
         ++i;
-        sleep(0.25);
+        sched_yield();
         printk("\n COMPLEX TASK %d OVER\n", (int)number);
     }
 
@@ -117,7 +118,7 @@ safety_set(){
     char ch = '0';
     rtems_status_code sc;
 
-    for(int i=0; i<3; ++i){
+    for(int i=0; i<4; ++i){
         sc = rtems_task_create(
               rtems_build_name('S', 'F', 'T', ch + i),
               SPRIO,
@@ -139,7 +140,7 @@ complex_set(){
     char ch = '0';
     rtems_status_code sc;
 
-    for(int i=0; i<3; ++i){
+    for(int i=0; i<4; ++i){
         sc = rtems_task_create(
               rtems_build_name('C', 'M', 'P', ch + i),
               CPRIO,
@@ -176,6 +177,65 @@ microreboot_task(rtems_task_argument arg){
     rtems_task_exit();
 }
 #endif
+
+static void
+microreboot_task(){
+    rtems_status_code sc;
+    int reset_counter = 0;
+    printk("\n MICROREBOOT MODULE STARTED");
+
+    while(1){
+        reset_counter %= 4;
+        sc = rtems_task_restart(c_tid[reset_counter++], 0);
+        if (sc != RTEMS_SUCCESSFUL){
+            printk("\n MICROREBOOT FAILED FOR: TASK %d TID: %d",
+                   reset_counter-1, c_tid[reset_counter-1]);
+        }
+        else{
+            printk("\n MICROREBOOTED TASK %d TID: %d",
+                   reset_counter-1, c_tid[reset_counter-1]);
+
+        }
+
+        reset_counter %= 4;
+        sc = rtems_task_restart(c_tid[reset_counter++], 0);
+        if (sc != RTEMS_SUCCESSFUL){
+            printk("\n MICROREBOOT FAILED FOR: TASK %d TID: %d",
+                   reset_counter-1, c_tid[reset_counter-1]);
+        }
+        else{
+            printk("\n MICROREBOOTED TASK %d TID: %d",
+                   reset_counter-1, c_tid[reset_counter-1]);
+
+        }
+        sleep(1);
+
+    }
+
+    rtems_task_exit();
+}
+
+static void
+microreboot_module(){
+    rtems_id mid;
+    rtems_status_code sc;
+    printk("\n DECISION MODULE STARTED");
+#if 0
+    sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
+#endif
+    sc = rtems_task_create(
+          rtems_build_name('M', 'R', 'B', 'T' ),
+          10,
+          RTEMS_MINIMUM_STACK_SIZE,
+          RTEMS_DEFAULT_MODES,
+          RTEMS_FLOATING_POINT,
+          &mid
+         );
+    assert(sc == RTEMS_SUCCESSFUL);
+    sc = rtems_task_start(mid, microreboot_task, 0);
+    assert(sc == RTEMS_SUCCESSFUL);
+}
 
 static void
 decision_module(rtems_task_argument arg){
@@ -237,6 +297,7 @@ Init(rtems_task_argument arg){
 
     safety_set();
     complex_set();
+    microreboot_module();
     decision_module(0);
 
     sleep(HYPER_PERIOD);
@@ -260,8 +321,8 @@ Init(rtems_task_argument arg){
 #define CONFIGURE_UNIFIED_WORK_AREAS
 #define CONFIGURE_MAXIMUM_USER_EXTENSIONS 1
 
-#define CONFIGURE_SCHEDULER_EDF
-//#define CONFIGURE_SCHEDULER_PRIORITY
+//#define CONFIGURE_SCHEDULER_EDF
+#define CONFIGURE_SCHEDULER_PRIORITY
 #define CONFIGURE_INIT_TASK_STACK_SIZE (64*1024)
 #define CONFIGURE_INIT_TASK_INITIAL_MODES RTEMS_DEFAULT_MODES
 #define CONFIGURE_INIT_TASK_ATTRIBUTES RTEMS_FLOATING_POINT
