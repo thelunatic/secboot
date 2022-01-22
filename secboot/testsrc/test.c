@@ -63,6 +63,7 @@ rtems_id semaphore;
 rtems_id c_tid[4];
 rtems_id s_tid[4];
 
+
 static void
 safety_task(rtems_task_argument number){
 
@@ -81,8 +82,9 @@ safety_task(rtems_task_argument number){
         SIMPLE[i] = 1;
         i++;
         //sleep(0.25);
-        sched_yield();
         printk("\n SAFETY TASK %d OVER\n", (int) number);
+        //sched_yield();
+        sleep(0.75);
     }
 
     rtems_task_exit();
@@ -94,22 +96,43 @@ complex_task(rtems_task_argument number){
     int val = 0;
     int temp1 = 0;
     int temp2 = 1;
+    int temp3 = 0;
     int i = 0;
     uint_fast32_t time_tick;
     rtems_status_code sc;
 
     while(1){
         i = i%4;
-        printk("\n COMPLEX TASK %d STARTED", (int)number);
+        temp3 = temp2 + temp1++;
+        printk("\n COMPLEX TASK %d STARTED === %d", (int)number, temp3);
         time_tick = T_get_one_clock_tick_busy();
         T_busy(time_tick/8);
         COMPLEX[i] = 1;
         ++i;
-        sched_yield();
         printk("\n COMPLEX TASK %d OVER\n", (int)number);
+        sleep(0.875);
     }
 
     rtems_task_exit();
+}
+
+static rtems_status_code
+task_restart(int task_num){
+    rtems_task_delete(c_tid[task_num]);
+    rtems_status_code sc;
+
+    sc = rtems_task_create(
+          rtems_build_name('C', 'M', 'P', (char)'0' + task_num),
+          CPRIO,
+          RTEMS_MINIMUM_STACK_SIZE,
+          RTEMS_DEFAULT_MODES,
+          RTEMS_FLOATING_POINT,
+          &c_tid[task_num]
+         );
+    assert(sc == RTEMS_SUCCESSFUL);
+    sc = rtems_task_start(c_tid[task_num], complex_task, task_num);
+
+    return sc;
 }
 
 static void
@@ -156,28 +179,6 @@ complex_set(){
 
 }
 
-#if 0
-static void
-microreboot_task(rtems_task_argument arg){
-    printk("\n MICROREBOOT REACHED");
-    for (int i = 1; i < 2; ++i){
-        //sleep(1);
-        //sched_yield();
-        rtems_status_code sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
-        assert(sc == RTEMS_SUCCESSFUL);
-
-        COMPLEX++;
-
-        sc = rtems_semaphore_release(semaphore);
-        assert(sc == RTEMS_SUCCESSFUL);
-
-        rtems_task_restart((rtems_id) arg, 0);
-    }
-
-    rtems_task_exit();
-}
-#endif
-
 static void
 microreboot_task(){
     rtems_status_code sc;
@@ -186,7 +187,7 @@ microreboot_task(){
 
     while(1){
         reset_counter %= 4;
-        sc = rtems_task_restart(c_tid[reset_counter++], 0);
+        sc = task_restart(reset_counter++);
         if (sc != RTEMS_SUCCESSFUL){
             printk("\n MICROREBOOT FAILED FOR: TASK %d TID: %d",
                    reset_counter-1, c_tid[reset_counter-1]);
@@ -198,7 +199,7 @@ microreboot_task(){
         }
 
         reset_counter %= 4;
-        sc = rtems_task_restart(c_tid[reset_counter++], 0);
+        sc = task_restart(reset_counter++);
         if (sc != RTEMS_SUCCESSFUL){
             printk("\n MICROREBOOT FAILED FOR: TASK %d TID: %d",
                    reset_counter-1, c_tid[reset_counter-1]);
@@ -208,7 +209,7 @@ microreboot_task(){
                    reset_counter-1, c_tid[reset_counter-1]);
 
         }
-        sleep(1);
+        sleep(4);
 
     }
 
@@ -255,7 +256,7 @@ decision_module(rtems_task_argument arg){
             }
             else{
                 printk("\n\n == DECISION: SAFETY MODULE == ");
-                rtems_task_restart(c_tid[i], i);
+                task_restart(i);
             }
 
         }
