@@ -1,6 +1,5 @@
 /*
- * Copyright (c) 2021 Regents of the University of Colorado.
- * Developed by the Embedded Systems and Security lab <essl@uccs.edu>
+ * Copyright (c) 2022 Anonymous.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -40,6 +39,8 @@
 #include <pthread.h>
 #include <sched.h>
 
+#include "sample-data.h"
+
 #ifdef RAND_MAX
 #undef RAND_MAX
 #endif
@@ -57,8 +58,9 @@
 #define SPRIO 10
 #define CPRIO 10
 
-int COMPLEX[4] = {0,0,0,0};
-int SIMPLE[4] = {0,0,0,0};
+int COMPLEX[4][50] = {{}};
+int SIMPLE[4][50] = {{}};
+int complex_counter[4] = {};
 rtems_id semaphore;
 rtems_id c_tid[4];
 rtems_id s_tid[4];
@@ -70,21 +72,21 @@ safety_task(rtems_task_argument number){
     int val = 0;
     int temp1 = 0;
     int temp2 = 1;
+    int temp3 = 0;
     int i = 0;
     uint_fast32_t time_tick;
     rtems_status_code sc;
 
     while(1){
-        i = i % 4;
-        printk("\n SAFETY TASK %d STARTED", (int)number);
+        //printk("\n SAFETY TASK %d STARTED", (int)number);
+        i = i % 50;
+        temp3 = temp1 + data[i];
         time_tick = T_get_one_clock_tick_busy();
         T_busy(time_tick/4);
-        SIMPLE[i] = 1;
+        SIMPLE[number][i] = temp3;
         i++;
-        //sleep(0.25);
-        printk("\n SAFETY TASK %d OVER\n", (int) number);
-        //sched_yield();
-        sleep(0.75);
+        //printk("\n SAFETY TASK %d OVER\n", (int) number);
+        sleep(0.25);
     }
 
     rtems_task_exit();
@@ -102,15 +104,18 @@ complex_task(rtems_task_argument number){
     rtems_status_code sc;
 
     while(1){
-        i = i%4;
-        temp3 = temp2 + temp1++;
-        printk("\n COMPLEX TASK %d STARTED === %d", (int)number, temp3);
+        i = complex_counter[number];
+        i = i%50;
+        //temp1 = COMPLEX[number][
+        temp3 = temp1 + data[i];
+        //printk("\n COMPLEX TASK %d STARTED === %d", (int)number, temp3);
         time_tick = T_get_one_clock_tick_busy();
         T_busy(time_tick/8);
-        COMPLEX[i] = 1;
-        ++i;
-        printk("\n COMPLEX TASK %d OVER\n", (int)number);
-        sleep(0.875);
+        COMPLEX[number][i] = temp3;
+        
+        complex_counter[number] = i + 1;
+        //printk("\n COMPLEX TASK %d OVER\n", (int)number);
+        sleep(0.25);
     }
 
     rtems_task_exit();
@@ -186,6 +191,7 @@ microreboot_task(){
     printk("\n MICROREBOOT MODULE STARTED");
 
     while(1){
+        sleep(16);
         reset_counter %= 4;
         sc = task_restart(reset_counter++);
         if (sc != RTEMS_SUCCESSFUL){
@@ -209,7 +215,6 @@ microreboot_task(){
                    reset_counter-1, c_tid[reset_counter-1]);
 
         }
-        sleep(4);
 
     }
 
@@ -220,7 +225,7 @@ static void
 microreboot_module(){
     rtems_id mid;
     rtems_status_code sc;
-    printk("\n DECISION MODULE STARTED");
+    printk("\n SECURE MICROREBOOT MODULE STARTED");
 #if 0
     sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
     assert(sc == RTEMS_SUCCESSFUL);
@@ -242,25 +247,32 @@ static void
 decision_module(rtems_task_argument arg){
     (void) arg;
     rtems_status_code sc;
+    int counter = 0;
     printk("\n DECISION MODULE STARTED");
 #if 0
     sc = rtems_semaphore_obtain( semaphore, RTEMS_WAIT, 0);
     assert(sc == RTEMS_SUCCESSFUL);
 #endif
 
+    printk("\n SET      SAFETY        COMPLEX     DECISION ");
+
     while(1){
         for (int i = 0; i < 4; ++i){
-            if (SIMPLE[i] == COMPLEX[i]){
-                printk("\n\n == DECISION: COMPLEX MODULE == ");
+            //for (int j = 0; j < 4; j++){
+                counter %= 50;
+                if (SIMPLE[i][counter] == COMPLEX[i][counter]){
+                    printk("\n %d          %d               %d       COMPLEX", i, SIMPLE[i][counter], COMPLEX[i][counter]);
+                    //printk("\n\n == DECISION FOR SET #%d: COMPLEX MODULE == ", i);
 
+                }
+                else{
+                    printk("\n %d          %d               %d       SAFETY <===", i, SIMPLE[i][counter], COMPLEX[i][counter]);
+                    //task_restart(i);
+                }
             }
-            else{
-                printk("\n\n == DECISION: SAFETY MODULE == ");
-                task_restart(i);
-            }
-
-        }
-        sleep(2);
+                counter++;
+        //}
+        sleep(3);
 
     }
 
@@ -278,7 +290,6 @@ Init(rtems_task_argument arg){
     rtems_id tid[5];
     char ch = '0';
     (void)arg;
-    uint32_t prio_list[] = {0, 1, 2, 2};
 
     printk("\n SYSTEM STARTED");
 
