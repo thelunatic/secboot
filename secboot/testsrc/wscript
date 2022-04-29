@@ -19,6 +19,6 @@ def build(bld):
 
     bld(features = 'c cprogram',
         target = 'secapp.exe',
-        source = ['test.c'],
+        source = ['test-periodic.c'],
         includes = include_paths,
         lib = ['m', 'rtemstest'])
